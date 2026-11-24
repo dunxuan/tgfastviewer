@@ -16,6 +16,7 @@ final class Around {
 
     static final int FIRST_PAGE = 20;
     static final int WINDOW = 50;
+    private static final long WINDOW_TIMEOUT_MS = 4000;
     private static final int FLAG_OFFSET_ID = 4;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final List<Class<?>> hookedCounters = new ArrayList<>();
@@ -39,27 +40,30 @@ final class Around {
         long dialogId = Ref.asLong(args.get(0), 0);
         int classGuid = Ref.asInt(args.get(7), -1);
         Object controller = chain.getThisObject();
-        Tg.Peer peer = tg.lastPeer();
+        Tg.Peer peer = tg.peerFor(dialogId);
         if (count != FIRST_PAGE) {
             return chain.proceed();
         }
         if (maxId != 0 || minId != 0 || args.get(9) != null) {
+            MediaAroundModule.logInfo("bail first-page: max=" + maxId + " min=" + minId + " tag=" + (args.get(9) != null));
             return chain.proceed();
         }
         Object query = args.get(10);
         if (query != null && !query.toString().isEmpty()) {
+            MediaAroundModule.logInfo("bail first-page: query");
             return chain.proceed();
         }
 
         if (dialogId == 0 || controller == null || classGuid == 0 || peer == null) {
-    
+            MediaAroundModule.logInfo("bail first-page: dialog=" + dialogId + " controller=" + (controller != null)
+                    + " guid=" + classGuid + " peer=" + (peer != null));
             return chain.proceed();
         }
 
         Object viewer = Viewer.instance();
         int account = Viewer.account();
         if (viewer == null || account < 0) {
-
+            MediaAroundModule.logInfo("bail first-page: viewer=" + (viewer != null) + " account=" + account);
             return chain.proceed();
         }
         Object anchor = Viewer.takePendingAnchor(dialogId);
@@ -69,10 +73,12 @@ final class Around {
         }
         Object owner = tg.ownerOf(anchor);
         if (owner == null || tg.isSecret(owner)) {
+            MediaAroundModule.logInfo("bail first-page: owner=" + (owner != null) + " secret=" + (owner != null && tg.isSecret(owner)));
             return chain.proceed();
         }
         int anchorId = tg.idOf(anchor);
         if (anchorId <= 0) {
+            MediaAroundModule.logInfo("bail first-page: anchorId=" + anchorId);
             return chain.proceed();
         }
 
@@ -105,7 +111,7 @@ final class Around {
             return chain.proceed();
         }
         Object controller = chain.getThisObject();
-        Tg.Peer peer = tg.lastPeer();
+        Tg.Peer peer = tg.peerFor(dialogId);
         if (controller == null || peer == null) {
             return chain.proceed();
         }
@@ -206,6 +212,7 @@ final class Around {
         private final Tg.Peer peer;
         private Object window;
         private int windowTopId;
+        private volatile boolean settled;
 
         Pending(Object controller, List<Object> args, Method entryMethod, int account, long dialogId, int type,
                 long topicId, int classGuid, int requestIndex, int anchorId, Tg.Peer peer) {
@@ -225,16 +232,37 @@ final class Around {
         boolean start() {
             Tg tg = Tg.INSTANCE;
             if (tg == null) {
+                MediaAroundModule.logInfo("start: no tg");
                 return false;
             }
             Object request = buildSearch(tg, anchorId, WINDOW, -(WINDOW / 2 + 1));
             if (request == null) {
+                MediaAroundModule.logInfo("start: buildSearch null newSearch=" + (tg.searchType != null)
+                        + " peer=" + (peer != null) + " input=" + (peer != null && peer.inputPeer != null)
+                        + " type=" + type);
                 return false;
             }
-            return send(tg, request, (response, error) -> onWindow(tg, response, error));
+            boolean queued = send(tg, request, (response, error) -> onWindow(tg, response, error));
+            if (!queued) {
+                MediaAroundModule.logInfo("start: send not queued");
+                return false;
+            }
+            MAIN.postDelayed(() -> {
+                if (!settled) {
+                    settled = true;
+                    MediaAroundModule.logInfo("window timeout, falling back");
+                    fallback(tg);
+                }
+            }, WINDOW_TIMEOUT_MS);
+            return true;
         }
 
         private void onWindow(Tg tg, Object response, Object error) {
+            if (settled) {
+                MediaAroundModule.logInfo("window arrived after fallback, ignored");
+                return;
+            }
+            settled = true;
             if (error != null || !tg.messagesType.isInstance(response)) {
                 fallback(tg);
                 return;
@@ -369,6 +397,7 @@ final class Around {
         private boolean send(Tg tg, Object request, ResponseHandler handler) {
             Object connectionsManager = Ref.call(tg.connectionsGetInstance, null, account);
             if (connectionsManager == null) {
+                MediaAroundModule.logInfo("send: ConnectionsManager null account=" + account);
                 return false;
             }
             InvocationHandler invocationHandler = (proxy, method, methodArgs) -> {
@@ -376,6 +405,8 @@ final class Around {
                 if ("run".equals(name)) {
                     Object response = methodArgs != null && methodArgs.length > 0 ? methodArgs[0] : null;
                     Object error = methodArgs != null && methodArgs.length > 1 ? methodArgs[1] : null;
+                    MediaAroundModule.logInfo("response arrived error=" + (error != null)
+                            + " resp=" + (response != null ? response.getClass().getSimpleName() : "null"));
                     MAIN.post(() -> handler.onResult(response, error));
                     return null;
                 }
@@ -393,6 +424,7 @@ final class Around {
             Object delegate = Proxy.newProxyInstance(tg.loader, new Class<?>[]{tg.requestDelegate}, invocationHandler);
             XposedInterface module = MediaAroundModule.module();
             if (module == null) {
+                MediaAroundModule.logInfo("send: module null");
                 return false;
             }
             int requestId;
@@ -405,6 +437,7 @@ final class Around {
                 MediaAroundModule.logError("around request failed", t);
                 return false;
             }
+            MediaAroundModule.logInfo("request sent token=" + requestId);
             return requestId != 0;
         }
     }

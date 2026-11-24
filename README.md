@@ -40,7 +40,7 @@ Telegram Android 官方客户端的相册查看器加速模块。在聊天里直
 ## 安装
 
 ```bash
-adb install -r TgFastViewer-1.3.0.apk
+adb install -r TgFastViewer-1.4.0.apk
 ```
 
 然后在 LSPosed 中启用并勾选作用域 **Telegram**（`org.telegram.messenger`），强停 Telegram 重新打开。
@@ -75,3 +75,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-local.ps1
 ## License
 
 [MIT](LICENSE)
+
+## 热重载
+
+模块基于 libxposed API 102，完整实现了热重载协议，不需要重启 Telegram 就能换上新版本代码：
+
+- `onHotReloading` 里停掉模块自建的扫描线程、作废当前绑定、把目标 App 的 `ClassLoader` 通过 `setSavedInstanceState` 交给新代，然后返回 `true` 声明旧代可以退役；
+- `onHotReloaded` 运行在**新**代码里，先 `unhook()` 掉 `getOldHookHandles()` 给出的全部旧句柄，再用继承下来的 `ClassLoader` 重新绑定并重装 hook——因为热重载**不会重放** `onPackageLoaded` 等生命周期回调；
+- 所有 hook 都带稳定 id（`viewer` / `network0..5` / `loadMedia` / `deliver`），便于按 id 核对与替换。
+
+这条链路同时带来一个实际好处：改完代码热重载即可生效，不必为了验证一次改动反复杀进程重开聊天。
+
+## 用到的 libxposed API
+
+| 能力 | 用途 |
+|---|---|
+| `XposedModule` + `onPackageLoaded` | 入口，按 `org.telegram.messenger` 过滤 |
+| `HookBuilder.setId` | 给每个 hook 稳定标识，热重载时可按 id 找回 |
+| `HookHandle.unhook` | 热重载时清掉上一代 hook |
+| `onHotReloading` / `onHotReloaded` | 热重载协议（停线程、移交 ClassLoader、重装 hook） |
+| `Invoker`（`Type.ORIGIN`） | 原样调用被拦下的 `loadMedia` / `processLoadedMedia` / `sendRequest` |
+| `module.log` | 统一日志，tag `TgFastViewer` |

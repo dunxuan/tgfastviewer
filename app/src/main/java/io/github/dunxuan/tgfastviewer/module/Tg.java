@@ -2,6 +2,11 @@ package io.github.dunxuan.tgfastviewer.module;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class Tg {
 
@@ -28,6 +33,7 @@ final class Tg {
     final Class<?> messageType;
     final Class<?> secretMessageType;
     final Class<?> searchCountersType;
+    final Class<?> inputPeerType;
     final Class<?>[] filters;
 
     final Method sendRequest;
@@ -62,7 +68,15 @@ final class Tg {
     volatile Method processLoadedMedia;
 
     private volatile Peer lastPeer;
+    private volatile boolean scanCancelled;
+
+    void cancelScan() {
+        scanCancelled = true;
+    }
+    private final Map<Long, Peer> peerByDialog = new ConcurrentHashMap<>();
+    private final Map<Class<?>, Field> peerFieldCache = Collections.synchronizedMap(new HashMap<>());
     private int diagnoseLeft = 3;
+    private int diagObserve;
 
     static final class Peer {
         final Object inputPeer;
@@ -88,6 +102,7 @@ final class Tg {
         messageType = requireClass(cl, "org.telegram.tgnet.TLRPC$Message");
         secretMessageType = Ref.load(cl, "org.telegram.tgnet.TLRPC$TL_message_secret");
         searchCountersType = Ref.load(cl, "org.telegram.tgnet.TLRPC$TL_messages_getSearchCounters");
+        inputPeerType = Ref.load(cl, "org.telegram.tgnet.TLRPC$InputPeer");
 
         filters = new Class<?>[FILTER_NAMES.length];
         for (int i = 0; i < FILTER_NAMES.length; i++) {
@@ -200,6 +215,69 @@ final class Tg {
         return lastPeer;
     }
 
+    Peer peerFor(long dialogId) {
+        Peer direct = lastPeer;
+        if (direct != null && dialogIdOfInputPeer(direct.inputPeer) == dialogId) {
+            return direct;
+        }
+        return peerByDialog.get(dialogId);
+    }
+
+    private void remember(long dialogId, Object inputPeer) {
+        peerByDialog.put(dialogId, new Peer(inputPeer, 0, null, 0));
+        if (peerByDialog.size() > 24) {
+            peerByDialog.clear();
+            peerByDialog.put(dialogId, new Peer(inputPeer, 0, null, 0));
+        }
+    }
+
+    private Object inputPeerOf(Object request) {
+        Class<?> type = request.getClass();
+        Field cached;
+        if (peerFieldCache.containsKey(type)) {
+            cached = peerFieldCache.get(type);
+        } else {
+            Field found = null;
+            if (inputPeerType != null) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (field.getType() == inputPeerType) {
+                        field.setAccessible(true);
+                        found = field;
+                        break;
+                    }
+                }
+            }
+            peerFieldCache.put(type, found);
+            cached = found;
+        }
+        if (cached == null) {
+            return null;
+        }
+        return Ref.get(cached, request);
+    }
+
+    long dialogIdOfInputPeer(Object inputPeer) {
+        if (inputPeer == null) {
+            return 0L;
+        }
+        String name = inputPeer.getClass().getSimpleName();
+        try {
+            if (name.contains("InputPeerChannel")) {
+                int id = Ref.getInt(Ref.anyField(inputPeer.getClass(), "channel_id"), inputPeer, 0);
+                return id == 0 ? 0L : -id;
+            }
+            if (name.contains("InputPeerChat")) {
+                int id = Ref.getInt(Ref.anyField(inputPeer.getClass(), "chat_id"), inputPeer, 0);
+                return id == 0 ? 0L : -id;
+            }
+            if (name.contains("InputPeerUser")) {
+                return Ref.getInt(Ref.anyField(inputPeer.getClass(), "user_id"), inputPeer, 0);
+            }
+        } catch (Throwable ignore) {
+        }
+        return 0L;
+    }
+
     Object newSearch() {
         return Ref.newInstance(searchType);
     }
@@ -274,12 +352,26 @@ final class Tg {
                             Ref.get(countersSavedPeerId, request), Ref.getInt(countersFlags, request, 0));
                 }
             }
+            Object inputPeer = inputPeerOf(request);
+            if (inputPeer != null) {
+                long dialogId = dialogIdOfInputPeer(inputPeer);
+                if (dialogId != 0) {
+                    remember(dialogId, inputPeer);
+                }
+                if (diagObserve < 10) {
+                    diagObserve++;
+                    MediaAroundModule.logInfo("obs " + type.getSimpleName() + " dlg=" + dialogId);
+                }
+            } else if (diagObserve < 10) {
+                diagObserve++;
+                MediaAroundModule.logInfo("obs " + type.getSimpleName() + " no-peer");
+            }
         } catch (Throwable ignore) {
         }
     }
 
     synchronized void discover() {
-        if (loadMedia != null) {
+        if (loadMedia != null || scanCancelled) {
             return;
         }
         StackTraceElement[] frames = new Throwable().getStackTrace();
@@ -322,6 +414,98 @@ final class Tg {
             }
         }
         return builder.toString();
+    }
+
+    synchronized void discoverByScan() {
+        if (loadMedia != null || scanCancelled) {
+            return;
+        }
+        long start = System.currentTimeMillis();
+        int checked = 0;
+        try {
+            ClassLoader cl = loader;
+            Field pathListField = anyField(cl.getClass(), "pathList");
+            if (pathListField == null) {
+                MediaAroundModule.logInfo("scan: no pathList on " + cl.getClass().getName());
+                return;
+            }
+            Object pathList = pathListField.get(cl);
+            if (pathList == null) {
+                MediaAroundModule.logInfo("scan: pathList null");
+                return;
+            }
+            Field elementsField = anyField(pathList.getClass(), "dexElements");
+            if (elementsField == null) {
+                MediaAroundModule.logInfo("scan: no dexElements");
+                return;
+            }
+            Object[] elements = (Object[]) elementsField.get(pathList);
+            if (elements == null) {
+                return;
+            }
+            for (Object element : elements) {
+                if (element == null) {
+                    continue;
+                }
+                Field dexFileField = anyField(element.getClass(), "dexFile");
+                if (dexFileField == null) {
+                    continue;
+                }
+                Object dexFile = dexFileField.get(element);
+                if (dexFile == null) {
+                    continue;
+                }
+                Method entries = dexFile.getClass().getMethod("entries");
+                @SuppressWarnings("unchecked")
+                Enumeration<String> names = (Enumeration<String>) entries.invoke(dexFile);
+                if (names == null) {
+                    continue;
+                }
+                while (names.hasMoreElements()) {
+                    if (scanCancelled) {
+                        return;
+                    }
+                    String name = names.nextElement();
+                    if (!name.startsWith("org.telegram.messenger.")) {
+                        continue;
+                    }
+                    Class<?> candidate = Ref.load(cl, name);
+                    if (candidate == null) {
+                        continue;
+                    }
+                    checked++;
+                    Method load = findLoadMedia(candidate);
+                    if (load == null) {
+                        continue;
+                    }
+                    Method process = findProcessLoadedMedia(candidate);
+                    if (process == null) {
+                        continue;
+                    }
+                    controllerType = candidate;
+                    loadMedia = load;
+                    processLoadedMedia = process;
+                    MediaAroundModule.installLoadMediaHook(this);
+                    MediaAroundModule.logInfo("scan found " + name + " checked=" + checked
+                            + " in " + (System.currentTimeMillis() - start) + "ms");
+                    return;
+                }
+            }
+            MediaAroundModule.logInfo("scan done checked=" + checked + " no match in "
+                    + (System.currentTimeMillis() - start) + "ms");
+        } catch (Throwable t) {
+            MediaAroundModule.logError("scan failed", t);
+        }
+    }
+
+    private Field anyField(Class<?> owner, String name) {
+        for (Class<?> c = owner; c != null && c != Object.class; c = c.getSuperclass()) {
+            Field field = Ref.field(c, name);
+            if (field != null) {
+                return field;
+            }
+        }
+        return null;
     }
 
     private Method findLoadMedia(Class<?> owner) {
