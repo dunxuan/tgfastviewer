@@ -69,6 +69,9 @@ final class Tg {
 
     private volatile Peer lastPeer;
     private volatile boolean scanCancelled;
+    volatile Class<?> messagesControllerType;
+    private volatile Method messagesGetInputPeer;
+    private volatile Method messagesGetInstance;
 
     void cancelScan() {
         scanCancelled = true;
@@ -215,12 +218,77 @@ final class Tg {
         return lastPeer;
     }
 
-    Peer peerFor(long dialogId) {
+    Peer peerFor(long dialogId, int account) {
         Peer direct = lastPeer;
         if (direct != null && dialogIdOfInputPeer(direct.inputPeer) == dialogId) {
             return direct;
         }
-        return peerByDialog.get(dialogId);
+        Peer cached = peerByDialog.get(dialogId);
+        if (cached != null) {
+            return cached;
+        }
+        Object derived = deriveInputPeer(dialogId, account);
+        if (derived != null) {
+            remember(dialogId, derived);
+            return peerByDialog.get(dialogId);
+        }
+        return null;
+    }
+
+    private Object deriveInputPeer(long dialogId, int account) {
+        if (dialogId == 0 || inputPeerType == null) {
+            return null;
+        }
+        Method getter = messagesGetInputPeer;
+        Method factory = messagesGetInstance;
+        if (getter == null || factory == null) {
+            return null;
+        }
+        try {
+            Object controller = factory.invoke(null, account);
+            if (controller == null) {
+                return null;
+            }
+            Object result = getter.invoke(controller, dialogId);
+            return inputPeerType.isInstance(result) ? result : null;
+        } catch (Throwable t) {
+            MediaAroundModule.logError("getInputPeer failed for " + dialogId, t);
+        }
+        return null;
+    }
+
+    private Method staticIntFactoryOf(Class<?> owner) {
+        for (Method method : owner.getDeclaredMethods()) {
+            if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
+                continue;
+            }
+            if (method.getParameterCount() != 1 || method.getParameterTypes()[0] != int.class) {
+                continue;
+            }
+            if (method.getReturnType() != owner) {
+                continue;
+            }
+            method.setAccessible(true);
+            return method;
+        }
+        return null;
+    }
+
+    private Method inputPeerMethodOf(Class<?> owner) {
+        for (Method method : owner.getDeclaredMethods()) {
+            if (method.getParameterCount() != 1) {
+                continue;
+            }
+            if (method.getParameterTypes()[0] != long.class) {
+                continue;
+            }
+            if (!inputPeerType.isAssignableFrom(method.getReturnType())) {
+                continue;
+            }
+            method.setAccessible(true);
+            return method;
+        }
+        return null;
     }
 
     private void remember(long dialogId, Object inputPeer) {
@@ -474,6 +542,24 @@ final class Tg {
                         continue;
                     }
                     checked++;
+                    if (inputPeerType != null && messagesGetInputPeer == null) {
+                        Method ip = inputPeerMethodOf(candidate);
+                        if (ip != null) {
+                            Method factory = staticIntFactoryOf(candidate);
+                            if (factory != null) {
+                                messagesGetInputPeer = ip;
+                                messagesGetInstance = factory;
+                                messagesControllerType = candidate;
+                                MediaAroundModule.logInfo("messages controller: " + name);
+                            }
+                        }
+                    }
+                    if (loadMedia != null) {
+                        if (messagesGetInputPeer != null) {
+                            break;
+                        }
+                        continue;
+                    }
                     Method load = findLoadMedia(candidate);
                     if (load == null) {
                         continue;
@@ -488,11 +574,11 @@ final class Tg {
                     MediaAroundModule.installLoadMediaHook(this);
                     MediaAroundModule.logInfo("scan found " + name + " checked=" + checked
                             + " in " + (System.currentTimeMillis() - start) + "ms");
-                    return;
                 }
             }
-            MediaAroundModule.logInfo("scan done checked=" + checked + " no match in "
-                    + (System.currentTimeMillis() - start) + "ms");
+            MediaAroundModule.logInfo("scan done checked=" + checked
+                    + " media=" + (loadMedia != null) + " peer=" + (messagesGetInputPeer != null)
+                    + " in " + (System.currentTimeMillis() - start) + "ms");
         } catch (Throwable t) {
             MediaAroundModule.logError("scan failed", t);
         }

@@ -15,8 +15,9 @@ import io.github.libxposed.api.XposedInterface;
 final class Around {
 
     static final int FIRST_PAGE = 20;
-    static final int WINDOW = 50;
+    static final int WINDOW = 64;
     private static final long WINDOW_TIMEOUT_MS = 4000;
+    private static final long PROBE_DELAY_MS = 300;
     private static final int FLAG_OFFSET_ID = 4;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final List<Class<?>> hookedCounters = new ArrayList<>();
@@ -40,7 +41,7 @@ final class Around {
         long dialogId = Ref.asLong(args.get(0), 0);
         int classGuid = Ref.asInt(args.get(7), -1);
         Object controller = chain.getThisObject();
-        Tg.Peer peer = tg.peerFor(dialogId);
+        Tg.Peer peer = tg.peerFor(dialogId, Viewer.account());
         if (count != FIRST_PAGE) {
             return chain.proceed();
         }
@@ -111,7 +112,7 @@ final class Around {
             return chain.proceed();
         }
         Object controller = chain.getThisObject();
-        Tg.Peer peer = tg.peerFor(dialogId);
+        Tg.Peer peer = tg.peerFor(dialogId, Viewer.account());
         if (controller == null || peer == null) {
             return chain.proceed();
         }
@@ -291,7 +292,7 @@ final class Around {
                 return;
             }
             deliver(tg);
-            probeNewest(tg);
+            MAIN.postDelayed(() -> probeNewest(tg), PROBE_DELAY_MS);
         }
 
         private void probeNewest(Tg tg) {
