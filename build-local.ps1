@@ -67,7 +67,7 @@ Write-Host '[5/5] sign'
 if (-not (Test-Path $keystore)) {
     & $keytool -genkeypair -keystore $keystore -alias modulekey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname 'CN=TgFastViewer, OU=Module, O=dunxuan' | Out-Null
 }
-$apk = Join-Path $outDir 'TgFastViewer-1.3.0.apk'
+$apk = Join-Path $outDir 'TgFastViewer-1.3.1.apk'
 if (Test-Path $apk) { Remove-Item $apk -Force }
 & (Join-Path $bt 'apksigner.bat') sign --ks $keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias modulekey --out $apk $signedInput
 if ($LASTEXITCODE -ne 0) { throw 'apksigner failed' }

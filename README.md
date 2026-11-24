@@ -4,7 +4,7 @@ Telegram Android 官方客户端的相册查看器加速模块。在聊天里直
 
 > LSPosed module for the official Telegram Android client. Opens any photo/video in a chat and makes it swipeable in ~0.3s, instead of paging through the whole history.
 
-包名：`io.github.dunxuan.tgfastviewer` · 作用域：`org.telegram.messenger` · 需要 LSPosed 2.2+（libxposed API 101）
+包名：`io.github.dunxuan.tgfastviewer` · 作用域：`org.telegram.messenger` · 需要 LSPosed 2.2+ / Vector 2.2+（libxposed API **102**）
 
 ## 问题
 
@@ -62,7 +62,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-local.ps1
 
 流程：`javac`（android.jar + `libs/libxposed-api-102.0.0.jar`）→ `d8` → `tools/make_apk.py` 生成二进制 `AndroidManifest.xml` 并打包 → `apksigner` 签名。
 
-依赖 `io.github.libxposed:api:102.0.0`（`compileOnly`），`minApiVersion=101`、`targetApiVersion=101`、`staticScope=true`。工程也可直接用 Android Studio 打开（AGP 8.13.2 / compileSdk 36 / minSdk 23）。
+依赖 `io.github.libxposed:api:102.0.0`（`compileOnly`，与声明的 API 102 一致），`minApiVersion=102`、`targetApiVersion=102`、`staticScope=true`。工程也可直接用 Android Studio 打开（AGP 8.13.2 / compileSdk 36 / minSdk 23）。
 
 > 本机 `aapt2 link` 无法创建归档，所以 `tools/make_apk.py` 自行生成二进制清单，不依赖 aapt2。
 

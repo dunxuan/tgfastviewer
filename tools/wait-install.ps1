@@ -1,5 +1,5 @@
 $adb = 'C:\Users\dunxuan\Downloads\_adb\adb.exe'
-$apk = 'C:\Users\dunxuan\Downloads\telegram\TgFastViewer\out\TgFastViewer-1.3.0.apk'
+$apk = 'C:\Users\dunxuan\Downloads\telegram\TgFastViewer\out\TgFastViewer-1.3.1.apk'
 $log = 'C:\Users\dunxuan\Downloads\telegram\TgFastViewer\build\wait-install.log'
 New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
 "[$(Get-Date -Format o)] waiting for phone 192.168.1.108" | Out-File $log -Encoding UTF8
