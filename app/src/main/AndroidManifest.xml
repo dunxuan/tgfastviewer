@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.dunxuan.tgfastviewer"
+    android:versionCode="5"
+    android:versionName="1.3.0">
+
+    <application
+        android:label="TG快点滑"
+        android:description="Telegram 相册查看器加速：点开任意位置的媒体后一次性加载锚点窗口，约 0.3 秒即可左右滑动；计数只在精确时显示。"
+        android:allowBackup="false"
+        android:hasCode="true" />
+</manifest>
