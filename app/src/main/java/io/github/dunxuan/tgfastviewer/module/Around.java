@@ -16,7 +16,7 @@ final class Around {
 
     static final int FIRST_PAGE = 20;
     static final int WINDOW = 64;
-    private static final long WINDOW_TIMEOUT_MS = 4000;
+    private static final long WINDOW_TIMEOUT_MS = 6000;
     private static final long PROBE_DELAY_MS = 300;
     private static final int FLAG_OFFSET_ID = 4;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -83,6 +83,10 @@ final class Around {
             return chain.proceed();
         }
 
+        if (!tg.claimWindow(dialogId)) {
+            MediaAroundModule.logInfo("skip: window budget dialog=" + dialogId + " type=" + Ref.asInt(args.get(4), -1));
+            return chain.proceed();
+        }
         MediaAroundModule.logInfo("around dialog=" + dialogId + " anchor=" + anchorId + " type=" + Ref.asInt(args.get(4), -1)
                 + " guid=" + classGuid);
         Viewer.hideCounter(true);

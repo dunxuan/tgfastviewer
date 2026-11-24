@@ -69,6 +69,35 @@ final class Tg {
 
     private volatile Peer lastPeer;
     private volatile boolean scanCancelled;
+    private final Map<Long, long[]> windowBudget = new ConcurrentHashMap<>();
+
+    /**
+     * PhotoViewer asks for the first page of every media type when it opens, so a single tap can
+     * produce a dozen window requests. Letting all of them through floods one connection and most
+     * of them miss the deadline, which is what makes an occasional open feel stuck. Only the first
+     * couple of types per dialog get a window; the rest fall back to the official path.
+     */
+    boolean claimWindow(long dialogId) {
+        long now = System.currentTimeMillis();
+        long[] slot = windowBudget.get(dialogId);
+        if (slot == null) {
+            windowBudget.put(dialogId, new long[]{now, 1L});
+            return true;
+        }
+        if (now - slot[0] > WINDOW_BUDGET_MS) {
+            slot[0] = now;
+            slot[1] = 1L;
+            return true;
+        }
+        if (slot[1] < WINDOW_PER_DIALOG) {
+            slot[1]++;
+            return true;
+        }
+        return false;
+    }
+
+    private static final long WINDOW_BUDGET_MS = 2500L;
+    private static final long WINDOW_PER_DIALOG = 2L;
     volatile Class<?> messagesControllerType;
     private volatile Method messagesGetInputPeer;
     private volatile Method messagesGetInstance;

@@ -40,7 +40,7 @@ Telegram Android 官方客户端的相册查看器加速模块。在聊天里直
 ## 安装
 
 ```bash
-adb install -r TgFastViewer-1.4.1.apk
+adb install -r TgFastViewer-1.4.2.apk
 ```
 
 然后在 LSPosed 中启用并勾选作用域 **Telegram**（`org.telegram.messenger`），强停 Telegram 重新打开。
