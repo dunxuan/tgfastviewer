@@ -15,9 +15,10 @@ import io.github.libxposed.api.XposedInterface;
 final class Around {
 
     static final int FIRST_PAGE = 20;
-    static final int WINDOW = 64;
+    static final int WINDOW = 40;
     private static final long WINDOW_TIMEOUT_MS = 6000;
     private static final long PROBE_DELAY_MS = 300;
+
     private static final int FLAG_OFFSET_ID = 4;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final List<Class<?>> hookedCounters = new ArrayList<>();
@@ -219,6 +220,7 @@ final class Around {
         private int windowTopId;
         private volatile boolean settled;
 
+
         Pending(Object controller, List<Object> args, Method entryMethod, int account, long dialogId, int type,
                 long topicId, int classGuid, int requestIndex, int anchorId, Tg.Peer peer) {
             this.controller = controller;
@@ -252,6 +254,7 @@ final class Around {
                 MediaAroundModule.logInfo("start: send not queued");
                 return false;
             }
+
             MAIN.postDelayed(() -> {
                 if (!settled) {
                     settled = true;

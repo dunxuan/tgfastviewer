@@ -10,8 +10,8 @@ android {
         applicationId = "io.github.dunxuan.tgfastviewer"
         minSdk = 23
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.4.2"
+        versionCode = 12
+        versionName = "1.4.5"
     }
 
     buildTypes {
