@@ -101,6 +101,18 @@ PhotoViewer 打开时会为**每种媒体类型各请求一次首页**，实测�
 
 `onHotReloading` 停掉模块自建扫描线程、作废绑定、把目标 `ClassLoader` 经 `setSavedInstanceState` 交给新代并返回 `true`；`onHotReloaded` 在新代码里 unhook 全部旧句柄后用继承的 `ClassLoader` 重新绑定。包生命周期回调**不会**重放，所以重装 hook 必须自己做。所有 hook 带稳定 id（`viewer` / `network0..5` / `loadMedia` / `deliver`）。
 
+### 5.7 用到的 libxposed API
+
+| 能力 | 用途 |
+|---|---|
+| `XposedModule` + `onPackageLoaded` | 入口，按 `org.telegram.messenger` 过滤 |
+| `HookBuilder.setId` | 给每个 hook 稳定标识，热重载时可按 id 找回 |
+| `HookHandle.unhook` / `getId` | 热重载时清掉上一代 hook，失败也能报出是哪个 id |
+| `onHotReloading` / `onHotReloaded` | 热重载协议：停线程、移交 ClassLoader、重装 hook |
+| `Invoker`（`Type.ORIGIN`） | 原样调用被拦下的 `loadMedia` / `processLoadedMedia` / `sendRequest` |
+| `setSavedInstanceState` | 把目标 App 的 `ClassLoader` 交给新一代代码 |
+| `module.log` | 统一日志，tag `TgFastViewer` |
+
 ## 6. 实测
 
 设备：Redmi 23049RAD8C / arm64，Telegram 13.3.1（Play 版，versionCode 73461），LSPosed 2.2.1（API 102）。
