@@ -40,7 +40,7 @@ Telegram Android 官方客户端的相册查看器加速模块。在聊天里直
 ## 安装
 
 ```bash
-adb install -r TgFastViewer-1.4.5.apk
+adb install -r TgFastViewer-1.4.6.apk
 ```
 
 然后在 LSPosed 中启用并勾选作用域 **Telegram**（`org.telegram.messenger`），强停 Telegram 重新打开。
@@ -96,3 +96,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-local.ps1
 | `onHotReloading` / `onHotReloaded` | 热重载协议（停线程、移交 ClassLoader、重装 hook） |
 | `Invoker`（`Type.ORIGIN`） | 原样调用被拦下的 `loadMedia` / `processLoadedMedia` / `sendRequest` |
 | `module.log` | 统一日志，tag `TgFastViewer` |
+
+## 深入
+
+根因分析、各平台客户端（TDesktop / Telegram-iOS / Telegram X）的方案对比、实现取舍与全部实测数据，见 [docs/design.md](docs/design.md)。

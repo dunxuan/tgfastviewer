@@ -108,7 +108,7 @@ final class Tg {
     private final Map<Long, Peer> peerByDialog = new ConcurrentHashMap<>();
     private final Map<Class<?>, Field> peerFieldCache = Collections.synchronizedMap(new HashMap<>());
     private int diagnoseLeft = 3;
-    private int diagObserve;
+
 
     static final class Peer {
         final Object inputPeer;
@@ -455,13 +455,6 @@ final class Tg {
                 if (dialogId != 0) {
                     remember(dialogId, inputPeer);
                 }
-                if (diagObserve < 10) {
-                    diagObserve++;
-                    MediaAroundModule.logInfo("obs " + type.getSimpleName() + " dlg=" + dialogId);
-                }
-            } else if (diagObserve < 10) {
-                diagObserve++;
-                MediaAroundModule.logInfo("obs " + type.getSimpleName() + " no-peer");
             }
         } catch (Throwable ignore) {
         }
